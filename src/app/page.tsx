@@ -1,34 +1,29 @@
-
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { 
-  ShieldCheck, 
-  Zap, 
-  History, 
-  Activity, 
-  Lock, 
-  Wallet, 
+import {
+  ShieldCheck,
+  Zap,
+  History,
+  Activity,
+  Lock,
   ArrowRightLeft,
   Search,
-  Settings,
   MoreVertical,
-  PlusCircle,
   TrendingUp,
-  AlertCircle
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { 
-  computeOptimalSwapQuote, 
-  type ComputeOptimalSwapQuoteOutput 
-} from '@/ai/flows/compute-optimal-swap-quote';
+import {
+  analyzePrivateTradeDecision,
+  type AnalyzeTradeDecisionOutput,
+} from '../ai/flows/compute-optimal-swap-quote';
 import { useToast } from "@/hooks/use-toast";
+import { WalletConnectButton } from '@solana/wallet-adapter-react-ui';
 
 // Types
 interface Token {
@@ -52,6 +47,16 @@ interface Trade {
   timestamp: Date;
 }
 
+type RiskTolerance = 'low' | 'medium' | 'high';
+
+interface StrategyState {
+  tokenIn: string;
+  tokenOut: string;
+  amount: string;
+  goal: string;
+  riskTolerance: RiskTolerance;
+}
+
 const MOCK_TOKENS: Token[] = [
   { symbol: 'ETH', name: 'Ethereum', priceUsd: 2845.20, change24h: 2.5, liquidityUsd: 500000000, volume24hUsd: 120000000, priceImpact: 0.05 },
   { symbol: 'WBTC', name: 'Wrapped Bitcoin', priceUsd: 64120.50, change24h: -1.2, liquidityUsd: 800000000, volume24hUsd: 250000000, priceImpact: 0.03 },
@@ -62,24 +67,32 @@ const MOCK_TOKENS: Token[] = [
 
 export default function StealthSwapDashboard() {
   const { toast } = useToast();
-  const [walletConnected, setWalletConnected] = useState(false);
+
+  // TEMP: keep this until you wire wallet adapter
+  const [walletConnected] = useState(true);
+
   const [activeTab, setActiveTab] = useState('swap');
   const [loadingQuote, setLoadingQuote] = useState(false);
-  const [quotes, setQuotes] = useState<ComputeOptimalSwapQuoteOutput | null>(null);
+  const [quotes, setQuotes] = useState<AnalyzeTradeDecisionOutput | null>(null);
   const [tradeHistory, setTradeHistory] = useState<Trade[]>([]);
-  const [strategy, setStrategy] = useState({
+  const [strategy, setStrategy] = useState<StrategyState>({
     tokenIn: 'ETH',
     tokenOut: 'USDC',
     amount: '1.0',
     goal: 'Minimize slippage',
-    riskTolerance: 'medium' as const
+    riskTolerance: 'medium',
   });
 
   // Hydrate local trade history
   useEffect(() => {
     const saved = localStorage.getItem('stealth_trades');
     if (saved) {
-      setTradeHistory(JSON.parse(saved).map((t: any) => ({ ...t, timestamp: new Date(t.timestamp) })));
+      setTradeHistory(
+        JSON.parse(saved).map((t: any) => ({
+          ...t,
+          timestamp: new Date(t.timestamp),
+        }))
+      );
     }
   }, []);
 
@@ -87,14 +100,6 @@ export default function StealthSwapDashboard() {
     const updated = [trade, ...tradeHistory];
     setTradeHistory(updated);
     localStorage.setItem('stealth_trades', JSON.stringify(updated));
-  };
-
-  const handleConnectWallet = () => {
-    setWalletConnected(true);
-    toast({
-      title: "Wallet Connected",
-      description: "Secure connection established with 0x71...f92a",
-    });
   };
 
   const handleFetchQuote = async () => {
@@ -108,8 +113,9 @@ export default function StealthSwapDashboard() {
     }
 
     setLoadingQuote(true);
+
     try {
-      const result = await computeOptimalSwapQuote({
+      const result = await analyzePrivateTradeDecision({
         tradingStrategy: {
           goal: strategy.goal,
           riskTolerance: strategy.riskTolerance,
@@ -117,7 +123,7 @@ export default function StealthSwapDashboard() {
           tokenInSymbol: strategy.tokenIn,
           tokenOutSymbol: strategy.tokenOut,
         },
-        marketData: MOCK_TOKENS.map(t => ({
+        marketData: MOCK_TOKENS.map((t) => ({
           symbol: t.symbol,
           priceUsd: t.priceUsd,
           liquidityUsd: t.liquidityUsd,
@@ -125,8 +131,10 @@ export default function StealthSwapDashboard() {
           priceImpact: t.priceImpact,
         })),
       });
+
       setQuotes(result);
     } catch (error) {
+      console.error(error);
       toast({
         variant: "destructive",
         title: "Inference Error",
@@ -142,7 +150,7 @@ export default function StealthSwapDashboard() {
       title: "Swap Executed",
       description: `Swapped ${strategy.amount} ${strategy.tokenIn} for ~${quote.amountOut} ${strategy.tokenOut} via ${quote.exchange}`,
     });
-    
+
     saveTrade({
       id: Math.random().toString(36).substr(2, 9),
       tokenIn: strategy.tokenIn,
@@ -166,11 +174,23 @@ export default function StealthSwapDashboard() {
             </div>
             <h1 className="font-headline text-xl font-bold tracking-tight text-white">StealthSwap</h1>
           </div>
-          
+
           <nav className="hidden md:flex items-center gap-6">
-            <button onClick={() => setActiveTab('swap')} className={`text-sm font-medium transition-colors ${activeTab === 'swap' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}>Dashboard</button>
-            <button onClick={() => setActiveTab('history')} className={`text-sm font-medium transition-colors ${activeTab === 'history' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}>History</button>
-            <button className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">Analytics</button>
+            <button
+              onClick={() => setActiveTab('swap')}
+              className={`text-sm font-medium transition-colors ${activeTab === 'swap' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              Dashboard
+            </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`text-sm font-medium transition-colors ${activeTab === 'history' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              History
+            </button>
+            <button className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              Analytics
+            </button>
           </nav>
 
           <div className="flex items-center gap-4">
@@ -178,15 +198,14 @@ export default function StealthSwapDashboard() {
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
               Mainnet
             </Badge>
-            <Button 
-              variant={walletConnected ? "secondary" : "default"}
-              size="sm"
-              className={walletConnected ? "bg-white/5 border-white/10 text-white font-code" : "bg-primary hover:bg-primary/90"}
-              onClick={handleConnectWallet}
-            >
-              <Wallet className="w-4 h-4 mr-2" />
-              {walletConnected ? "0x71...f92a" : "Connect Wallet"}
-            </Button>
+            <WalletConnectButton style={{
+
+              background: "#4F81D9",
+              color: "#fff",
+              height: "2.5rem",
+              fontSize: "0.875rem",
+              fontWeight: "500",
+            }} />
           </div>
         </div>
       </header>
@@ -223,7 +242,8 @@ export default function StealthSwapDashboard() {
                         <div className="text-right">
                           <div className="text-sm font-mono text-white">${token.priceUsd.toLocaleString()}</div>
                           <div className={`text-[10px] font-mono ${token.change24h >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                            {token.change24h >= 0 ? '+' : ''}{token.change24h}%
+                            {token.change24h >= 0 ? '+' : ''}
+                            {token.change24h}%
                           </div>
                         </div>
                       </div>
@@ -261,33 +281,37 @@ export default function StealthSwapDashboard() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Swap From</label>
-                        <select 
+                        <select
                           className="w-full bg-background border border-white/5 rounded-md h-10 px-3 text-sm focus:ring-1 focus:ring-primary outline-none"
                           value={strategy.tokenIn}
-                          onChange={(e) => setStrategy({...strategy, tokenIn: e.target.value})}
+                          onChange={(e) => setStrategy({ ...strategy, tokenIn: e.target.value })}
                         >
-                          {MOCK_TOKENS.map(t => <option key={t.symbol} value={t.symbol}>{t.symbol}</option>)}
+                          {MOCK_TOKENS.map((t) => (
+                            <option key={t.symbol} value={t.symbol}>{t.symbol}</option>
+                          ))}
                         </select>
                       </div>
                       <div className="space-y-2">
                         <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Amount</label>
-                        <Input 
-                          type="number" 
-                          className="bg-background border-white/5" 
+                        <Input
+                          type="number"
+                          className="bg-background border-white/5"
                           value={strategy.amount}
-                          onChange={(e) => setStrategy({...strategy, amount: e.target.value})}
+                          onChange={(e) => setStrategy({ ...strategy, amount: e.target.value })}
                         />
                       </div>
                     </div>
 
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Receive (Estimated)</label>
-                      <select 
+                      <select
                         className="w-full bg-background border border-white/5 rounded-md h-10 px-3 text-sm focus:ring-1 focus:ring-primary outline-none"
                         value={strategy.tokenOut}
-                        onChange={(e) => setStrategy({...strategy, tokenOut: e.target.value})}
+                        onChange={(e) => setStrategy({ ...strategy, tokenOut: e.target.value })}
                       >
-                        {MOCK_TOKENS.map(t => <option key={t.symbol} value={t.symbol}>{t.symbol}</option>)}
+                        {MOCK_TOKENS.map((t) => (
+                          <option key={t.symbol} value={t.symbol}>{t.symbol}</option>
+                        ))}
                       </select>
                     </div>
 
@@ -296,22 +320,22 @@ export default function StealthSwapDashboard() {
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Trading Goal</label>
-                        <Input 
-                          className="bg-background border-white/5" 
+                        <Input
+                          className="bg-background border-white/5"
                           placeholder="e.g. Maximize profit, Minimize slippage"
                           value={strategy.goal}
-                          onChange={(e) => setStrategy({...strategy, goal: e.target.value})}
+                          onChange={(e) => setStrategy({ ...strategy, goal: e.target.value })}
                         />
                       </div>
                       <div className="space-y-2">
                         <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Risk Tolerance</label>
                         <div className="flex gap-2">
-                          {(['low', 'medium', 'high'] as const).map(r => (
-                            <Button 
+                          {(['low', 'medium', 'high'] as const).map((r) => (
+                            <Button
                               key={r}
                               variant={strategy.riskTolerance === r ? "default" : "outline"}
                               className={`flex-1 h-8 text-[10px] uppercase font-bold border-white/5 ${strategy.riskTolerance === r ? 'bg-primary' : 'bg-transparent'}`}
-                              onClick={() => setStrategy({...strategy, riskTolerance: r})}
+                              onClick={() => setStrategy({ ...strategy, riskTolerance: r })}
                             >
                               {r}
                             </Button>
@@ -320,7 +344,7 @@ export default function StealthSwapDashboard() {
                       </div>
                     </div>
 
-                    <Button 
+                    <Button
                       className="w-full mt-4 bg-primary hover:bg-primary/90 font-headline font-bold text-white shadow-lg shadow-primary/20 h-12"
                       disabled={loadingQuote}
                       onClick={handleFetchQuote}
@@ -340,7 +364,6 @@ export default function StealthSwapDashboard() {
                   </CardContent>
                 </Card>
 
-                {/* Secure Inference Explanation */}
                 <div className="p-4 rounded-lg bg-accent/10 border border-accent/20 flex gap-3">
                   <ShieldCheck className="w-5 h-5 text-accent shrink-0 mt-0.5" />
                   <div className="text-xs space-y-1">
@@ -369,7 +392,7 @@ export default function StealthSwapDashboard() {
                       </div>
                     ) : loadingQuote ? (
                       <div className="space-y-4">
-                        {[1, 2].map(i => (
+                        {[1, 2].map((i) => (
                           <div key={i} className="animate-pulse space-y-3 p-4 rounded-lg border border-white/5 bg-white/5">
                             <div className="h-4 bg-white/10 rounded w-1/4" />
                             <div className="h-8 bg-white/10 rounded w-3/4" />
@@ -381,11 +404,11 @@ export default function StealthSwapDashboard() {
                       <div className="space-y-4">
                         <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400">
                           <div className="font-bold mb-1">Inference Summary:</div>
-                          {quotes.strategySummary}
+                          {quotes?.strategySummary}
                         </div>
-                        
+
                         <div className="space-y-4">
-                          {quotes.optimalSwapQuotes.map((quote, idx) => (
+                          {quotes?.optimalSwapQuotes.map((quote: any, idx: number) => (
                             <div key={idx} className="p-4 rounded-lg border border-white/10 bg-white/5 hover:border-primary/50 transition-all group">
                               <div className="flex justify-between items-start mb-3">
                                 <div>
@@ -397,7 +420,7 @@ export default function StealthSwapDashboard() {
                                 </div>
                                 <Badge className="bg-primary/20 text-primary border-primary/20">Optimal</Badge>
                               </div>
-                              
+
                               <div className="grid grid-cols-2 gap-4 text-[11px] mb-4">
                                 <div className="flex justify-between border-b border-white/5 pb-1">
                                   <span className="text-muted-foreground">Slippage</span>
@@ -413,7 +436,7 @@ export default function StealthSwapDashboard() {
                                 &ldquo;{quote.rationale}&rdquo;
                               </p>
 
-                              <Button 
+                              <Button
                                 className="w-full bg-white text-black hover:bg-white/90 font-bold"
                                 size="sm"
                                 onClick={() => executeSwap(quote)}
@@ -430,17 +453,20 @@ export default function StealthSwapDashboard() {
               </div>
             </div>
           ) : (
-            /* History View */
             <Card className="glass-panel border-white/5">
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
                   <CardTitle className="font-headline">Trade History</CardTitle>
                   <CardDescription>Locally stored execution records</CardDescription>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => {
-                  setTradeHistory([]);
-                  localStorage.removeItem('stealth_trades');
-                }}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    setTradeHistory([]);
+                    localStorage.removeItem('stealth_trades');
+                  }}
+                >
                   <MoreVertical className="w-4 h-4 text-muted-foreground" />
                 </Button>
               </CardHeader>
@@ -498,7 +524,6 @@ export default function StealthSwapDashboard() {
         </div>
       </main>
 
-      {/* Footer Status Bar */}
       <footer className="h-8 border-t bg-card text-[10px] flex items-center px-4 justify-between font-mono">
         <div className="flex items-center gap-4 text-muted-foreground">
           <div className="flex items-center gap-1.5">
