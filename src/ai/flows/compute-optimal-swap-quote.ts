@@ -1,122 +1,74 @@
 'use server';
 
-import { z } from 'zod';
 import { SolRouter } from '@solrouter/sdk';
+import { z } from 'zod';
 
 const client = new SolRouter({
   apiKey: process.env.NEXT_PUBLIC_SOL_ROUTER_API_KEY!,
 });
-
-console.log("API Key:", process.env.NEXT_PUBLIC_SOL_ROUTER_API_KEY);
 
 const TokenDataSchema = z.object({
   symbol: z.string(),
   priceUsd: z.number(),
   liquidityUsd: z.number(),
   volume24hUsd: z.number(),
-  priceImpact: z.number(),
 });
 
-const TradingStrategySchema = z.object({
-  goal: z.string(),
-  riskTolerance: z.enum(['low', 'medium', 'high']),
-  amountIn: z.number(),
-  tokenInSymbol: z.string(),
-  tokenOutSymbol: z.string(),
-});
-
-const AnalyzeTradeDecisionInputSchema = z.object({
-  tradingStrategy: TradingStrategySchema,
+const AgentInputSchema = z.object({
+  userMessage: z.string(),
   marketData: z.array(TokenDataSchema),
 });
 
-export type AnalyzeTradeDecisionInput = z.infer<typeof AnalyzeTradeDecisionInputSchema>;
+export type AgentInput = z.infer<typeof AgentInputSchema>;
 
-const SwapQuoteSchema = z.object({
-  exchange: z.string(),
+const SwapSchema = z.object({
+  action: z.string(),
   amountOut: z.number(),
   slippage: z.number(),
-  gasFeeUsd: z.number(),
   rationale: z.string(),
 });
 
-const AnalyzeTradeDecisionOutputSchema = z.object({
-  optimalSwapQuotes: z.array(SwapQuoteSchema),
+const AgentResponseSchema = z.object({
   strategySummary: z.string(),
+  recommendedSwaps: z.array(SwapSchema),
 });
 
-export type AnalyzeTradeDecisionOutput = z.infer<typeof AnalyzeTradeDecisionOutputSchema>;
+export type AgentResponse = z.infer<typeof AgentResponseSchema>;
 
-// export async function analyzePrivateTradeDecision(
-//   input: AnalyzeTradeDecisionInput
-// ): Promise<AnalyzeTradeDecisionOutput> {
-//   const prompt = `
-// You are a private DeFi trading assistant.
+export async function analyzePrivateTradeDecision(input: AgentInput): Promise<AgentResponse> {
+  const prompt = `
+You are StealthAgent, a private Solana trading agent that keeps the user's strategy completely confidential.
 
-// A user wants swap guidance based on their private strategy.
+User request: "${input.userMessage}"
 
-// Trading Strategy:
-// - Goal: ${input.tradingStrategy.goal}
-// - Risk Tolerance: ${input.tradingStrategy.riskTolerance}
-// - Amount In: ${input.tradingStrategy.amountIn} ${input.tradingStrategy.tokenInSymbol}
-// - Token Out: ${input.tradingStrategy.tokenOutSymbol}
+Latest market data:
+${input.marketData.map(t => `- ${t.symbol}: $${t.priceUsd.toFixed(2)} | Liquidity: $${(t.liquidityUsd/1e6).toFixed(1)}M | 24h Vol: $${(t.volume24hUsd/1e6).toFixed(1)}M`).join('\n')}
 
-// Market Data:
-// ${input.marketData
-//   .map(
-//     (t) =>
-//       `- ${t.symbol}: price=$${t.priceUsd}, liquidity=$${t.liquidityUsd}, volume24h=$${t.volume24hUsd}, priceImpact=${t.priceImpact}%`
-//   )
-//   .join('\n')}
+Analyze the request using the user's private intent. 
+Return ONLY valid JSON in this exact format:
 
-// Return ONLY valid JSON matching this shape:
-// {
-//   "optimalSwapQuotes": [
-//     {
-//       "exchange": "string",
-//       "amountOut": number,
-//       "slippage": number,
-//       "gasFeeUsd": number,
-//       "rationale": "string"
-//     }
-//   ],
-//   "strategySummary": "string"
-// }
+{
+  "strategySummary": "Brief summary of your understanding and overall recommendation",
+  "recommendedSwaps": [
+    {
+      "action": "Swap X TOKEN → Y TOKEN",
+      "amountOut": number,
+      "slippage": number,
+      "rationale": "Short explanation why this fits the user's request"
+    }
+  ]
+}
 
-// Rules:
-// - Recommend 2-3 realistic swap options
-// - Prefer low slippage and high liquidity
-// - Tailor suggestions to the user's goal and risk tolerance
-// - No markdown, no explanation outside JSON
-// `;
+Be realistic, prefer good liquidity, and tailor to risk implied in the request.
+`;
 
-//   const response = await client.chat(prompt);
-  
+  const response = await client.chat(prompt);
 
-//   try {
-//     const parsed = JSON.parse(response.message);
-//     return AnalyzeTradeDecisionOutputSchema.parse(parsed);
-//   } catch (error) {
-//     console.error('Failed to parse SolRouter response:', response.message);
-//     throw new Error('Invalid AI response format');
-//   }
-// }
-
-
-
-export async function analyzePrivateTradeDecision(input: AnalyzeTradeDecisionInput) {
-  const response = await client.chat("Say hello in JSON: {\"message\":\"hello\"}");
-  console.log("SOLROUTER RAW RESPONSE:", response);
-  return {
-    optimalSwapQuotes: [
-      {
-        exchange: "TestDEX",
-        amountOut: 100,
-        slippage: 0.2,
-        gasFeeUsd: 0.05,
-        rationale: "Test response while debugging SolRouter",
-      },
-    ],
-    strategySummary: response.message || "SolRouter test completed",
-  };
+  try {
+    const parsed = JSON.parse(response.message || '{}');
+    return AgentResponseSchema.parse(parsed);
+  } catch (e) {
+    console.error("Parse error:", response.message);
+    throw new Error("Failed to parse agent response");
+  }
 }

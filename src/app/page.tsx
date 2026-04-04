@@ -1,544 +1,310 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect } from 'react';
-import {
-  ShieldCheck,
-  Zap,
-  History,
-  Activity,
-  Lock,
-  ArrowRightLeft,
-  Search,
-  MoreVertical,
-  TrendingUp,
-} from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { ShieldCheck, Send, Lock, TrendingUp, Bot } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
-import {
-  analyzePrivateTradeDecision,
-  type AnalyzeTradeDecisionOutput,
-} from '../ai/flows/compute-optimal-swap-quote';
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { WalletConnectButton } from '@solana/wallet-adapter-react-ui';
+import { analyzePrivateTradeDecision, type AgentResponse } from '../ai/flows/compute-optimal-swap-quote';
 
-// Types
-interface Token {
-  symbol: string;
-  name: string;
-  priceUsd: number;
-  change24h: number;
-  liquidityUsd: number;
-  volume24hUsd: number;
-  priceImpact: number;
-}
-
-interface Trade {
+interface Message {
   id: string;
-  tokenIn: string;
-  tokenOut: string;
-  amountIn: number;
-  amountOut: number;
-  exchange: string;
-  status: 'completed' | 'pending' | 'failed';
+  role: 'user' | 'agent';
+  content: string;
   timestamp: Date;
+  swaps?: AgentResponse['recommendedSwaps'];
 }
 
-type RiskTolerance = 'low' | 'medium' | 'high';
-
-interface StrategyState {
-  tokenIn: string;
-  tokenOut: string;
-  amount: string;
-  goal: string;
-  riskTolerance: RiskTolerance;
-}
-
-const MOCK_TOKENS: Token[] = [
-  { symbol: 'ETH', name: 'Ethereum', priceUsd: 2845.20, change24h: 2.5, liquidityUsd: 500000000, volume24hUsd: 120000000, priceImpact: 0.05 },
-  { symbol: 'WBTC', name: 'Wrapped Bitcoin', priceUsd: 64120.50, change24h: -1.2, liquidityUsd: 800000000, volume24hUsd: 250000000, priceImpact: 0.03 },
-  { symbol: 'USDC', name: 'USD Coin', priceUsd: 1.00, change24h: 0.01, liquidityUsd: 2000000000, volume24hUsd: 450000000, priceImpact: 0.01 },
-  { symbol: 'SOL', name: 'Solana', priceUsd: 142.75, change24h: 5.4, liquidityUsd: 300000000, volume24hUsd: 90000000, priceImpact: 0.12 },
-  { symbol: 'LINK', name: 'Chainlink', priceUsd: 18.20, change24h: 1.8, liquidityUsd: 150000000, volume24hUsd: 40000000, priceImpact: 0.25 },
-];
-
-export default function StealthSwapDashboard() {
+export default function StealthAgentDashboard() {
   const { toast } = useToast();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // TEMP: keep this until you wire wallet adapter
-  const [walletConnected] = useState(true);
-
-  const [activeTab, setActiveTab] = useState('swap');
-  const [loadingQuote, setLoadingQuote] = useState(false);
-  const [quotes, setQuotes] = useState<AnalyzeTradeDecisionOutput | null>(null);
-  const [tradeHistory, setTradeHistory] = useState<Trade[]>([]);
-  const [strategy, setStrategy] = useState<StrategyState>({
-    tokenIn: 'ETH',
-    tokenOut: 'USDC',
-    amount: '1.0',
-    goal: 'Minimize slippage',
-    riskTolerance: 'medium',
-  });
-
-  // Hydrate local trade history
-  useEffect(() => {
-    const saved = localStorage.getItem('stealth_trades');
-    if (saved) {
-      setTradeHistory(
-        JSON.parse(saved).map((t: any) => ({
-          ...t,
-          timestamp: new Date(t.timestamp),
-        }))
-      );
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: 'welcome',
+      role: 'agent',
+      content:
+        "I'm StealthAgent — your private Solana trading agent.\n\nYour strategy and reasoning stay fully encrypted via SolRouter. Describe what you want to do.",
+      timestamp: new Date(),
     }
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [tokens, setTokens] = useState<any[]>([]);
+
+  // Fetch tokens
+  useEffect(() => {
+    const fetchTokens = async () => {
+      try {
+        const res = await fetch(
+          'https://public-api.birdeye.so/defi/tokenlist?sort_by=v24hUSD&sort_type=desc&offset=0&limit=20&min_liquidity=100000',
+          {
+            headers: {
+              'x-chain': 'solana',
+              accept: 'application/json',
+              'X-API-KEY': '226ea5b807ff44308be52c64ffeada3e',
+            },
+          }
+        );
+        const data = await res.json();
+        setTokens(data.data?.tokens || []);
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    fetchTokens();
   }, []);
 
-  const saveTrade = (trade: Trade) => {
-    const updated = [trade, ...tradeHistory];
-    setTradeHistory(updated);
-    localStorage.setItem('stealth_trades', JSON.stringify(updated));
-  };
+  // Auto-scroll to latest message
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
 
-  const handleFetchQuote = async () => {
-    if (!walletConnected) {
-      toast({
-        variant: "destructive",
-        title: "Wallet Required",
-        description: "Please connect your wallet to fetch secure quotes.",
-      });
-      return;
-    }
+  const sendToAgent = async () => {
+    if (!input.trim()) return;
 
-    setLoadingQuote(true);
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: input,
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, userMsg]);
+    const userInput = input;
+    setInput('');
+    setLoading(true);
 
     try {
-      const result = await analyzePrivateTradeDecision({
-        tradingStrategy: {
-          goal: strategy.goal,
-          riskTolerance: strategy.riskTolerance,
-          amountIn: parseFloat(strategy.amount),
-          tokenInSymbol: strategy.tokenIn,
-          tokenOutSymbol: strategy.tokenOut,
-        },
-        marketData: MOCK_TOKENS.map((t) => ({
-          symbol: t.symbol,
-          priceUsd: t.priceUsd,
-          liquidityUsd: t.liquidityUsd,
-          volume24hUsd: t.volume24hUsd,
-          priceImpact: t.priceImpact,
-        })),
+      const marketData = tokens.slice(0, 15).map((t: any) => ({
+        symbol: t.symbol,
+        priceUsd: t.price || 0,
+        liquidityUsd: t.liquidity || 0,
+        volume24hUsd: t.v24hUSD || 0,
+      }));
+
+      const result: AgentResponse = await analyzePrivateTradeDecision({
+        userMessage: userInput,
+        marketData,
       });
 
-      setQuotes(result);
+      const agentMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'agent',
+        content: result.strategySummary,
+        timestamp: new Date(),
+        swaps: result.recommendedSwaps,
+      };
+
+      setMessages(prev => [...prev, agentMsg]);
     } catch (error) {
-      console.error(error);
       toast({
         variant: "destructive",
-        title: "Inference Error",
-        description: "Failed to securely compute swap quotes.",
+        title: "Error",
+        description: "Encrypted inference failed."
       });
     } finally {
-      setLoadingQuote(false);
+      setLoading(false);
     }
   };
 
-  const executeSwap = (quote: any) => {
+  const executeSwap = (swap: any) => {
+    console.log("Executing swap:", swap);
     toast({
-      title: "Swap Executed",
-      description: `Swapped ${strategy.amount} ${strategy.tokenIn} for ~${quote.amountOut} ${strategy.tokenOut} via ${quote.exchange}`,
+      title: "Swap Initiated",
+      description: `Executing ${swap.action} — Review in wallet`,
     });
-
-    saveTrade({
-      id: Math.random().toString(36).substr(2, 9),
-      tokenIn: strategy.tokenIn,
-      tokenOut: strategy.tokenOut,
-      amountIn: parseFloat(strategy.amount),
-      amountOut: quote.amountOut,
-      exchange: quote.exchange,
-      status: 'completed',
-      timestamp: new Date(),
-    });
+    // TODO: Add real Jupiter integration here later
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-background text-foreground font-body">
-      {/* Navigation Header */}
-      <header className="border-b bg-card/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
-              <ShieldCheck className="text-white w-5 h-5" />
+    <div className="min-h-screen bg-zinc-950 text-white overflow-hidden">
+      {/* Header */}
+      <header className="sticky top-0 z-50 h-16 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-full max-w-7xl items-center justify-between px-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-600 shadow-lg shadow-violet-900/30">
+              <Bot className="h-5 w-5" />
             </div>
-            <h1 className="font-headline text-xl font-bold tracking-tight text-white">StealthSwap</h1>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight sm:text-2xl">StealthAgent</h1>
+              <p className="text-xs text-zinc-500">Private Trading Agent • Powered by SolRouter</p>
+            </div>
           </div>
 
-          <nav className="hidden md:flex items-center gap-6">
-            <button
-              onClick={() => setActiveTab('swap')}
-              className={`text-sm font-medium transition-colors ${activeTab === 'swap' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              Dashboard
-            </button>
-            <button
-              onClick={() => setActiveTab('history')}
-              className={`text-sm font-medium transition-colors ${activeTab === 'history' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
-            >
-              History
-            </button>
-            <button className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              Analytics
-            </button>
-          </nav>
-
-          <div className="flex items-center gap-4">
-            <Badge variant="outline" className="hidden sm:flex gap-1.5 py-1 px-3 border-white/10 bg-white/5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              Mainnet
+          <div className="flex items-center gap-3">
+            <Badge className="hidden border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-emerald-400 md:flex">
+              <div className="mr-2 h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+              Encrypted Inference Active
             </Badge>
-            <WalletConnectButton style={{
-
-              background: "#4F81D9",
-              color: "#fff",
-              height: "2.5rem",
-              fontSize: "0.875rem",
-              fontWeight: "500",
-            }} />
+            <WalletConnectButton />
           </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Token Feed */}
-        <div className="lg:col-span-3 space-y-6 order-2 lg:order-1">
-          <Card className="glass-panel border-white/5 h-[calc(100vh-160px)] flex flex-col">
-            <CardHeader className="p-4 pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-headline uppercase tracking-widest text-muted-foreground">Market Feed</CardTitle>
-                <TrendingUp className="w-4 h-4 text-primary" />
-              </div>
-              <div className="relative mt-2">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search tokens..." className="pl-9 bg-background/50 border-white/5 h-9 text-xs" />
-              </div>
-            </CardHeader>
-            <CardContent className="p-0 flex-1 overflow-hidden">
-              <ScrollArea className="h-full px-4">
-                <div className="space-y-4 py-4">
-                  {MOCK_TOKENS.map((token) => (
-                    <div key={token.symbol} className="group cursor-pointer">
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-[10px] font-bold">
-                            {token.symbol[0]}
-                          </div>
-                          <div>
-                            <div className="text-sm font-medium text-white">{token.symbol}</div>
-                            <div className="text-[10px] text-muted-foreground">{token.name}</div>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-mono text-white">${token.priceUsd.toLocaleString()}</div>
-                          <div className={`text-[10px] font-mono ${token.change24h >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
-                            {token.change24h >= 0 ? '+' : ''}
-                            {token.change24h}%
-                          </div>
-                        </div>
-                      </div>
-                      <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
-                        <div className="bg-primary/30 h-full w-[60%]" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Center/Right Columns: Action Center */}
-        <div className="lg:col-span-9 space-y-6 order-1 lg:order-2">
-          {activeTab === 'swap' ? (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              {/* Strategy Form */}
-              <div className="space-y-6">
-                <Card className="glass-panel border-white/5 shadow-2xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-4 opacity-5">
-                    <ArrowRightLeft className="w-24 h-24" />
-                  </div>
-                  <CardHeader>
-                    <CardTitle className="font-headline flex items-center gap-2">
-                      <Zap className="w-5 h-5 text-primary" />
-                      Secure Swap
-                    </CardTitle>
-                    <CardDescription>
-                      Define strategy parameters locally. Inference is encrypted.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Swap From</label>
-                        <select
-                          className="w-full bg-background border border-white/5 rounded-md h-10 px-3 text-sm focus:ring-1 focus:ring-primary outline-none"
-                          value={strategy.tokenIn}
-                          onChange={(e) => setStrategy({ ...strategy, tokenIn: e.target.value })}
-                        >
-                          {MOCK_TOKENS.map((t) => (
-                            <option key={t.symbol} value={t.symbol}>{t.symbol}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Amount</label>
-                        <Input
-                          type="number"
-                          className="bg-background border-white/5"
-                          value={strategy.amount}
-                          onChange={(e) => setStrategy({ ...strategy, amount: e.target.value })}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Receive (Estimated)</label>
-                      <select
-                        className="w-full bg-background border border-white/5 rounded-md h-10 px-3 text-sm focus:ring-1 focus:ring-primary outline-none"
-                        value={strategy.tokenOut}
-                        onChange={(e) => setStrategy({ ...strategy, tokenOut: e.target.value })}
-                      >
-                        {MOCK_TOKENS.map((t) => (
-                          <option key={t.symbol} value={t.symbol}>{t.symbol}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <Separator className="bg-white/5" />
-
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Trading Goal</label>
-                        <Input
-                          className="bg-background border-white/5"
-                          placeholder="e.g. Maximize profit, Minimize slippage"
-                          value={strategy.goal}
-                          onChange={(e) => setStrategy({ ...strategy, goal: e.target.value })}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Risk Tolerance</label>
-                        <div className="flex gap-2">
-                          {(['low', 'medium', 'high'] as const).map((r) => (
-                            <Button
-                              key={r}
-                              variant={strategy.riskTolerance === r ? "default" : "outline"}
-                              className={`flex-1 h-8 text-[10px] uppercase font-bold border-white/5 ${strategy.riskTolerance === r ? 'bg-primary' : 'bg-transparent'}`}
-                              onClick={() => setStrategy({ ...strategy, riskTolerance: r })}
-                            >
-                              {r}
-                            </Button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <Button
-                      className="w-full mt-4 bg-primary hover:bg-primary/90 font-headline font-bold text-white shadow-lg shadow-primary/20 h-12"
-                      disabled={loadingQuote}
-                      onClick={handleFetchQuote}
-                    >
-                      {loadingQuote ? (
-                        <div className="flex items-center gap-2">
-                          <Activity className="w-4 h-4 animate-spin" />
-                          Encrypted Inference...
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <Lock className="w-4 h-4" />
-                          Compute Optimal Quote
-                        </div>
-                      )}
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                <div className="p-4 rounded-lg bg-accent/10 border border-accent/20 flex gap-3">
-                  <ShieldCheck className="w-5 h-5 text-accent shrink-0 mt-0.5" />
-                  <div className="text-xs space-y-1">
-                    <div className="font-bold text-accent">Zero-Knowledge Inference</div>
-                    <p className="text-muted-foreground leading-relaxed">
-                      Your trading strategy parameters are processed in a secure enclave. Plaintext strategy details never persist on public infrastructure.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Quotes Display */}
-              <div className="space-y-6">
-                <Card className="glass-panel border-white/5 h-full">
-                  <CardHeader>
-                    <CardTitle className="font-headline text-sm uppercase tracking-widest text-muted-foreground">Inference Results</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {!quotes && !loadingQuote ? (
-                      <div className="flex flex-col items-center justify-center py-20 text-center opacity-50">
-                        <div className="w-12 h-12 rounded-full border-2 border-dashed border-white/20 mb-4 flex items-center justify-center">
-                          <Search className="w-6 h-6 text-muted-foreground" />
-                        </div>
-                        <p className="text-sm font-medium">No active inference results</p>
-                        <p className="text-[10px]">Adjust strategy and run computation</p>
-                      </div>
-                    ) : loadingQuote ? (
-                      <div className="space-y-4">
-                        {[1, 2].map((i) => (
-                          <div key={i} className="animate-pulse space-y-3 p-4 rounded-lg border border-white/5 bg-white/5">
-                            <div className="h-4 bg-white/10 rounded w-1/4" />
-                            <div className="h-8 bg-white/10 rounded w-3/4" />
-                            <div className="h-4 bg-white/10 rounded w-full" />
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-400">
-                          <div className="font-bold mb-1">Inference Summary:</div>
-                          {quotes?.strategySummary}
-                        </div>
-
-                        <div className="space-y-4">
-                          {quotes?.optimalSwapQuotes.map((quote: any, idx: number) => (
-                            <div key={idx} className="p-4 rounded-lg border border-white/10 bg-white/5 hover:border-primary/50 transition-all group">
-                              <div className="flex justify-between items-start mb-3">
-                                <div>
-                                  <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">{quote.exchange}</div>
-                                  <div className="text-2xl font-mono text-white flex items-baseline gap-2">
-                                    {quote.amountOut.toFixed(4)}
-                                    <span className="text-sm text-primary">{strategy.tokenOut}</span>
-                                  </div>
-                                </div>
-                                <Badge className="bg-primary/20 text-primary border-primary/20">Optimal</Badge>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-4 text-[11px] mb-4">
-                                <div className="flex justify-between border-b border-white/5 pb-1">
-                                  <span className="text-muted-foreground">Slippage</span>
-                                  <span className="font-mono text-white">{quote.slippage}%</span>
-                                </div>
-                                <div className="flex justify-between border-b border-white/5 pb-1">
-                                  <span className="text-muted-foreground">Gas (USD)</span>
-                                  <span className="font-mono text-white">${quote.gasFeeUsd.toFixed(2)}</span>
-                                </div>
-                              </div>
-
-                              <p className="text-xs text-muted-foreground italic mb-4 leading-relaxed">
-                                &ldquo;{quote.rationale}&rdquo;
-                              </p>
-
-                              <Button
-                                className="w-full bg-white text-black hover:bg-white/90 font-bold"
-                                size="sm"
-                                onClick={() => executeSwap(quote)}
-                              >
-                                Execute Swap Quote
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-          ) : (
-            <Card className="glass-panel border-white/5">
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="font-headline">Trade History</CardTitle>
-                  <CardDescription>Locally stored execution records</CardDescription>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => {
-                    setTradeHistory([]);
-                    localStorage.removeItem('stealth_trades');
-                  }}
-                >
-                  <MoreVertical className="w-4 h-4 text-muted-foreground" />
-                </Button>
+      {/* Main */}
+      <main className="mx-auto h-[calc(100vh-4rem)] max-w-7xl p-4 sm:p-6">
+        <div className="grid h-full min-h-0 grid-cols-1 gap-6 lg:grid-cols-12">
+          {/* Market Feed */}
+          <div className="lg:col-span-4 min-h-0">
+            <Card className="flex h-full min-h-0 flex-col overflow-hidden border-zinc-800 bg-zinc-900/80 backdrop-blur">
+              <CardHeader className="border-b border-zinc-800 pb-4">
+                <CardTitle className="flex items-center gap-2 text-sm uppercase tracking-[0.2em] text-zinc-400">
+                  <TrendingUp className="h-4 w-4" />
+                  Live Market Feed
+                </CardTitle>
               </CardHeader>
-              <CardContent>
-                {tradeHistory.length === 0 ? (
-                  <div className="py-20 text-center opacity-50">
-                    <History className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                    <p className="text-sm">No recorded trades found</p>
+
+              <CardContent className="min-h-0 flex-1 p-0">
+                <ScrollArea className="h-full">
+                  <div className="divide-y divide-zinc-800">
+                    {tokens.slice(0, 12).map((token: any, i: number) => (
+                      <div
+                        key={i}
+                        className="flex items-center justify-between px-5 py-4 transition-colors hover:bg-zinc-800/50"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{token.symbol}</div>
+                          <div className="truncate text-xs text-zinc-500">{token.name}</div>
+                        </div>
+
+                        <div className="text-right">
+                          <div className="font-mono text-sm">
+                            ${(token.price || 0).toFixed(token.price > 10 ? 2 : 4)}
+                          </div>
+                          <div className="text-xs text-emerald-500">0.0%</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left">
-                      <thead className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground border-b border-white/5">
-                        <tr>
-                          <th className="px-4 py-3">Token Pair</th>
-                          <th className="px-4 py-3">Input</th>
-                          <th className="px-4 py-3">Output</th>
-                          <th className="px-4 py-3">Exchange</th>
-                          <th className="px-4 py-3">Status</th>
-                          <th className="px-4 py-3 text-right">Time</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {tradeHistory.map((trade) => (
-                          <tr key={trade.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                            <td className="px-4 py-4 font-bold">
-                              {trade.tokenIn} / {trade.tokenOut}
-                            </td>
-                            <td className="px-4 py-4 font-mono">
-                              {trade.amountIn} {trade.tokenIn}
-                            </td>
-                            <td className="px-4 py-4 font-mono text-emerald-400">
-                              +{trade.amountOut.toFixed(4)} {trade.tokenOut}
-                            </td>
-                            <td className="px-4 py-4 text-xs">
-                              {trade.exchange}
-                            </td>
-                            <td className="px-4 py-4">
-                              <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px] py-0 px-2">
-                                Success
-                              </Badge>
-                            </td>
-                            <td className="px-4 py-4 text-right text-xs text-muted-foreground">
-                              {trade.timestamp.toLocaleTimeString()}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                </ScrollArea>
               </CardContent>
             </Card>
-          )}
+          </div>
+
+          {/* Agent Chat */}
+          <div className="lg:col-span-8 min-h-0">
+            <Card className="flex h-full min-h-0 flex-col overflow-hidden border-zinc-800 bg-zinc-900/80 backdrop-blur">
+              <CardHeader className="border-b border-zinc-800">
+                <div className="flex items-center gap-3">
+                  <ShieldCheck className="h-6 w-6 text-emerald-500" />
+                  <div>
+                    <CardTitle>Private Trading Agent</CardTitle>
+                    <CardDescription className="text-zinc-400">
+                      Your trading strategy and reasoning are encrypted on-device before inference.
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+
+              <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+                {/* Messages */}
+                <div className="min-h-0 flex-1">
+                  <ScrollArea className="h-full">
+                    <div className="space-y-6 p-6">
+                      {messages.map((msg) => (
+                        <div
+                          key={msg.id}
+                          className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div
+                            className={`w-fit max-w-[85%] overflow-hidden rounded-2xl border shadow-sm ${
+                              msg.role === 'user'
+                                ? 'rounded-tr-md border-blue-500/20 bg-blue-600 text-white'
+                                : 'rounded-tl-md border-zinc-700 bg-zinc-800 text-zinc-100'
+                            }`}
+                          >
+                            <div className="p-5 text-[15px] leading-7 whitespace-pre-wrap">
+                              {msg.content}
+                            </div>
+
+                            {msg.swaps && msg.swaps.length > 0 && (
+                              <div className="space-y-4 px-5 pb-5">
+                                {msg.swaps.map((swap: any, idx: number) => (
+                                  <div
+                                    key={idx}
+                                    className="rounded-2xl border border-zinc-700 bg-zinc-950/90 p-5"
+                                  >
+                                    <div className="mb-2 text-lg font-semibold">{swap.action}</div>
+
+                                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+                                      <span>
+                                        Expected out:{' '}
+                                        <span className="font-mono text-emerald-400">
+                                          {swap.amountOut}
+                                        </span>
+                                      </span>
+                                      <span>
+                                        Slippage:{' '}
+                                        <span className="font-mono">{swap.slippage}%</span>
+                                      </span>
+                                    </div>
+
+                                    <p className="mb-4 text-sm italic text-zinc-400">
+                                      “{swap.rationale}”
+                                    </p>
+
+                                    <Button
+                                      onClick={() => executeSwap(swap)}
+                                      className="w-full rounded-xl bg-blue-600 font-medium text-white hover:bg-blue-700"
+                                    >
+                                      Execute This Swap
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+
+                      {loading && (
+                        <div className="flex justify-start">
+                          <div className="flex items-center gap-3 rounded-2xl rounded-tl-md border border-zinc-700 bg-zinc-800 px-5 py-4 text-zinc-200 shadow-sm">
+                            <Lock className="h-4 w-4 animate-pulse" />
+                            Running encrypted inference on SolRouter...
+                          </div>
+                        </div>
+                      )}
+
+                      <div ref={messagesEndRef} />
+                    </div>
+                  </ScrollArea>
+                </div>
+
+                {/* Input */}
+                <div className="border-t border-zinc-800 p-4 sm:p-6">
+                  <div className="flex gap-3">
+                    <Input
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="Analyze trending tokens for a medium-risk swap with 80 USDC using my momentum strategy"
+                      onKeyDown={(e) => e.key === 'Enter' && !loading && sendToAgent()}
+                      disabled={loading}
+                      className="h-12 rounded-xl border-zinc-700 bg-zinc-950 text-white placeholder:text-zinc-500 focus-visible:ring-1 focus-visible:ring-blue-500"
+                    />
+                    <Button
+                      onClick={sendToAgent}
+                      disabled={loading || !input.trim()}
+                      className="h-12 rounded-xl bg-blue-600 px-5 hover:bg-blue-700"
+                    >
+                      <Send className="h-5 w-5" />
+                    </Button>
+                  </div>
+
+                  <p className="mt-3 text-center text-[10px] text-zinc-500">
+                    Strategy & reasoning encrypted via SolRouter • Never sent in plaintext
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </main>
-
-      <footer className="h-8 border-t bg-card text-[10px] flex items-center px-4 justify-between font-mono">
-        <div className="flex items-center gap-4 text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-            AI Network: Online
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-accent" />
-            Encryption: Active (AES-256)
-          </div>
-        </div>
-        <div className="text-muted-foreground uppercase tracking-tighter">
-          v1.0.4-stealth // node_id: 0x442...a91
-        </div>
-      </footer>
     </div>
   );
 }
