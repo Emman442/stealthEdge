@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ShieldCheck, Send, Lock, TrendingUp, Bot } from 'lucide-react';
+import { ShieldCheck, Send, Lock, Bot } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,15 +28,16 @@ export default function StealthAgentDashboard() {
       id: 'welcome',
       role: 'agent',
       content:
-        "I'm StealthAgent — your private Solana trading agent.\n\nYour strategy and reasoning stay fully encrypted via SolRouter. Describe what you want to do.",
+        "I'm StealthAgent, your private Solana trading agent.\n\nYour strategy and reasoning stay fully encrypted via SolRouter. Describe what you want to do.",
       timestamp: new Date(),
     }
   ]);
+
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [tokens, setTokens] = useState<any[]>([]);
 
-  // Fetch tokens
+  // Keep this only if your AI still needs market data
   useEffect(() => {
     const fetchTokens = async () => {
       try {
@@ -56,10 +57,11 @@ export default function StealthAgentDashboard() {
         console.error(err);
       }
     };
+
     fetchTokens();
   }, []);
 
-  // Auto-scroll to latest message
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
@@ -71,10 +73,10 @@ export default function StealthAgentDashboard() {
       id: Date.now().toString(),
       role: 'user',
       content: input,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMsg]);
+    setMessages((prev) => [...prev, userMsg]);
     const userInput = input;
     setInput('');
     setLoading(true);
@@ -100,12 +102,12 @@ export default function StealthAgentDashboard() {
         swaps: result.recommendedSwaps,
       };
 
-      setMessages(prev => [...prev, agentMsg]);
+      setMessages((prev) => [...prev, agentMsg]);
     } catch (error) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Encrypted inference failed."
+        description: "Encrypted inference failed.",
       });
     } finally {
       setLoading(false);
@@ -118,7 +120,6 @@ export default function StealthAgentDashboard() {
       title: "Swap Initiated",
       description: `Executing ${swap.action} — Review in wallet`,
     });
-    // TODO: Add real Jupiter integration here later
   };
 
   return (
@@ -147,163 +148,123 @@ export default function StealthAgentDashboard() {
       </header>
 
       {/* Main */}
-      <main className="mx-auto h-[calc(100vh-4rem)] max-w-7xl p-4 sm:p-6">
-        <div className="grid h-full min-h-0 grid-cols-1 gap-6 lg:grid-cols-12">
-          {/* Market Feed */}
-          <div className="lg:col-span-4 min-h-0">
-            <Card className="flex h-full min-h-0 flex-col overflow-hidden border-zinc-800 bg-zinc-900/80 backdrop-blur">
-              <CardHeader className="border-b border-zinc-800 pb-4">
-                <CardTitle className="flex items-center gap-2 text-sm uppercase tracking-[0.2em] text-zinc-400">
-                  <TrendingUp className="h-4 w-4" />
-                  Live Market Feed
+      <main className="mx-auto h-[calc(100vh-4rem)] max-w-6xl p-4 sm:p-6">
+        <Card className="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900/80 shadow-2xl backdrop-blur">
+          <CardHeader className="border-b border-zinc-800 px-6 py-5">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="h-6 w-6 text-emerald-500" />
+              <div>
+                <CardTitle className="text-2xl font-semibold tracking-tight">
+                  Private Trading Agent
                 </CardTitle>
-              </CardHeader>
+                <CardDescription className="text-zinc-400">
+                  Your trading strategy and reasoning are encrypted on-device before inference.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
 
-              <CardContent className="min-h-0 flex-1 p-0">
-                <ScrollArea className="h-full">
-                  <div className="divide-y divide-zinc-800">
-                    {tokens.slice(0, 12).map((token: any, i: number) => (
-                      <div
-                        key={i}
-                        className="flex items-center justify-between px-5 py-4 transition-colors hover:bg-zinc-800/50"
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate font-medium">{token.symbol}</div>
-                          <div className="truncate text-xs text-zinc-500">{token.name}</div>
-                        </div>
-
-                        <div className="text-right">
-                          <div className="font-mono text-sm">
-                            ${(token.price || 0).toFixed(token.price > 10 ? 2 : 4)}
-                          </div>
-                          <div className="text-xs text-emerald-500">0.0%</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Agent Chat */}
-          <div className="lg:col-span-8 min-h-0">
-            <Card className="flex h-full min-h-0 flex-col overflow-hidden border-zinc-800 bg-zinc-900/80 backdrop-blur">
-              <CardHeader className="border-b border-zinc-800">
-                <div className="flex items-center gap-3">
-                  <ShieldCheck className="h-6 w-6 text-emerald-500" />
-                  <div>
-                    <CardTitle>Private Trading Agent</CardTitle>
-                    <CardDescription className="text-zinc-400">
-                      Your trading strategy and reasoning are encrypted on-device before inference.
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-
-              <CardContent className="flex min-h-0 flex-1 flex-col p-0">
-                {/* Messages */}
-                <div className="min-h-0 flex-1">
-                  <ScrollArea className="h-full">
-                    <div className="space-y-6 p-6">
-                      {messages.map((msg) => (
-                        <div
-                          key={msg.id}
-                          className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                        >
-                          <div
-                            className={`w-fit max-w-[85%] overflow-hidden rounded-2xl border shadow-sm ${
-                              msg.role === 'user'
-                                ? 'rounded-tr-md border-blue-500/20 bg-blue-600 text-white'
-                                : 'rounded-tl-md border-zinc-700 bg-zinc-800 text-zinc-100'
-                            }`}
-                          >
-                            <div className="p-5 text-[15px] leading-7 whitespace-pre-wrap">
-                              {msg.content}
-                            </div>
-
-                            {msg.swaps && msg.swaps.length > 0 && (
-                              <div className="space-y-4 px-5 pb-5">
-                                {msg.swaps.map((swap: any, idx: number) => (
-                                  <div
-                                    key={idx}
-                                    className="rounded-2xl border border-zinc-700 bg-zinc-950/90 p-5"
-                                  >
-                                    <div className="mb-2 text-lg font-semibold">{swap.action}</div>
-
-                                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm">
-                                      <span>
-                                        Expected out:{' '}
-                                        <span className="font-mono text-emerald-400">
-                                          {swap.amountOut}
-                                        </span>
-                                      </span>
-                                      <span>
-                                        Slippage:{' '}
-                                        <span className="font-mono">{swap.slippage}%</span>
-                                      </span>
-                                    </div>
-
-                                    <p className="mb-4 text-sm italic text-zinc-400">
-                                      “{swap.rationale}”
-                                    </p>
-
-                                    <Button
-                                      onClick={() => executeSwap(swap)}
-                                      className="w-full rounded-xl bg-blue-600 font-medium text-white hover:bg-blue-700"
-                                    >
-                                      Execute This Swap
-                                    </Button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-
-                      {loading && (
-                        <div className="flex justify-start">
-                          <div className="flex items-center gap-3 rounded-2xl rounded-tl-md border border-zinc-700 bg-zinc-800 px-5 py-4 text-zinc-200 shadow-sm">
-                            <Lock className="h-4 w-4 animate-pulse" />
-                            Running encrypted inference on SolRouter...
-                          </div>
-                        </div>
-                      )}
-
-                      <div ref={messagesEndRef} />
-                    </div>
-                  </ScrollArea>
-                </div>
-
-                {/* Input */}
-                <div className="border-t border-zinc-800 p-4 sm:p-6">
-                  <div className="flex gap-3">
-                    <Input
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      placeholder="Analyze trending tokens for a medium-risk swap with 80 USDC using my momentum strategy"
-                      onKeyDown={(e) => e.key === 'Enter' && !loading && sendToAgent()}
-                      disabled={loading}
-                      className="h-12 rounded-xl border-zinc-700 bg-zinc-950 text-white placeholder:text-zinc-500 focus-visible:ring-1 focus-visible:ring-blue-500"
-                    />
-                    <Button
-                      onClick={sendToAgent}
-                      disabled={loading || !input.trim()}
-                      className="h-12 rounded-xl bg-blue-600 px-5 hover:bg-blue-700"
+          <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+            {/* Messages */}
+            <div className="min-h-0 flex-1">
+              <ScrollArea className="h-full">
+                <div className="space-y-6 p-6">
+                  {messages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
-                      <Send className="h-5 w-5" />
-                    </Button>
-                  </div>
+                      <div
+                        className={`w-fit max-w-[85%] overflow-hidden rounded-2xl border shadow-sm ${
+                          msg.role === 'user'
+                            ? 'rounded-tr-md border-blue-500/20 bg-blue-600 text-white'
+                            : 'rounded-tl-md border-zinc-700 bg-zinc-800 text-zinc-100'
+                        }`}
+                      >
+                        <div className="p-5 text-[15px] leading-7 whitespace-pre-wrap">
+                          {msg.content}
+                        </div>
 
-                  <p className="mt-3 text-center text-[10px] text-zinc-500">
-                    Strategy & reasoning encrypted via SolRouter • Never sent in plaintext
-                  </p>
+                        {msg.swaps && msg.swaps.length > 0 && (
+                          <div className="space-y-4 px-5 pb-5">
+                            {msg.swaps.map((swap: any, idx: number) => (
+                              <div
+                                key={idx}
+                                className="rounded-2xl border border-zinc-700 bg-zinc-950/90 p-5"
+                              >
+                                <div className="mb-2 text-lg font-semibold">{swap.action}</div>
+
+                                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+                                  <span>
+                                    Expected out:{' '}
+                                    <span className="font-mono text-emerald-400">
+                                      {swap.amountOut}
+                                    </span>
+                                  </span>
+                                  <span>
+                                    Slippage:{' '}
+                                    <span className="font-mono">{swap.slippage}%</span>
+                                  </span>
+                                </div>
+
+                                <p className="mb-4 text-sm italic text-zinc-400">
+                                  “{swap.rationale}”
+                                </p>
+
+                                <Button
+                                  onClick={() => executeSwap(swap)}
+                                  className="w-full rounded-xl bg-blue-600 font-medium text-white hover:bg-blue-700"
+                                >
+                                  Execute This Swap
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  {loading && (
+                    <div className="flex justify-start">
+                      <div className="flex items-center gap-3 rounded-2xl rounded-tl-md border border-zinc-700 bg-zinc-800 px-5 py-4 text-zinc-200 shadow-sm">
+                        <Lock className="h-4 w-4 animate-pulse" />
+                        Running encrypted inference on SolRouter...
+                      </div>
+                    </div>
+                  )}
+
+                  <div ref={messagesEndRef} />
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+              </ScrollArea>
+            </div>
+
+            {/* Input */}
+            <div className="border-t border-zinc-800 bg-zinc-900/60 p-4 sm:p-6">
+              <div className="flex items-center gap-3">
+                <Input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Analyze trending tokens for a medium-risk swap with 80 USDC using my momentum strategy"
+                  onKeyDown={(e) => e.key === 'Enter' && !loading && sendToAgent()}
+                  disabled={loading}
+                  className="h-14 rounded-2xl border-zinc-700 bg-zinc-950 text-white placeholder:text-zinc-500 focus-visible:ring-1 focus-visible:ring-blue-500"
+                />
+                <Button
+                  onClick={sendToAgent}
+                  disabled={loading || !input.trim()}
+                  className="h-14 rounded-2xl bg-blue-600 px-6 hover:bg-blue-700"
+                >
+                  <Send className="h-5 w-5" />
+                </Button>
+              </div>
+
+              <p className="mt-3 text-center text-[11px] text-zinc-500">
+                Strategy & reasoning encrypted via SolRouter • Never sent in plaintext
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </main>
     </div>
   );
