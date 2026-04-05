@@ -148,7 +148,7 @@ export default function StealthAgentDashboard() {
       </header>
 
       {/* Main */}
-      <main className="mx-auto h-[calc(100vh-4rem)] max-w-6xl p-4 sm:p-6">
+      <main className="mx-auto h-[calc(100vh-4rem)] max-w-7xl p-4 sm:p-6">
         <Card className="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-900/80 shadow-2xl backdrop-blur">
           <CardHeader className="border-b border-zinc-800 px-6 py-5">
             <div className="flex items-center gap-3">
