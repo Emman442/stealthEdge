@@ -1,69 +1,63 @@
-# StealthAgent - Private Trading Agent on Solana
+# StealthEdge - Private Polymarket Research Agent
 
-Hey, welcome to StealthAgent.
+Hey there,
 
-I built this as a real private trading agent that lets you get smart swap recommendations on Solana without ever exposing your trading strategy to third-party servers.
+I built **StealthEdge** — a private research agent that lets you analyze Polymarket prediction markets without exposing your research intent or strategy to any third-party servers.
 
-### What is StealthAgent?
+### What is StealthEdge?
 
-StealthAgent is a simple yet powerful chat interface where you talk to an AI trading assistant in natural language. You describe your idea, goal, or strategy, and the agent gives you tailored swap suggestions.
+StealthEdge is a simple chat interface where you can ask natural language questions about prediction markets on Polymarket (politics, crypto, pop culture, geopolitics, entertainment, etc.).
 
-The big difference? Everything sensitive about your request gets encrypted on your device before it ever leaves your computer. This is powered by SolRouter.
+The key difference?  
+Your entire question and reasoning are **encrypted on-device** using the SolRouter SDK before they leave your computer. The AI processes everything inside secure isolated hardware, and only the final analysis comes back.
+
+This means no one (not even the AI provider) can see what you're researching or what private thesis you're testing.
 
 ### The Problem It Solves
 
-Most AI trading tools today have a serious privacy issue.
+When people research prediction markets using normal AI tools (ChatGPT, Claude, etc.), their full prompt — including sensitive angles, private theses, or competitive edges — gets sent in plaintext to external servers.  
 
-When you ask something like:
-"Analyze trending tokens for a medium-risk swap with 80 USDC using my momentum strategy"
+That’s risky in a space where information asymmetry is everything.
 
-...that full prompt (including your secret strategy rules, risk tolerance, and intent) gets sent in plain text to the AI provider's servers. That means your edge, your research, and your thinking process are no longer private.
-
-This is risky for traders, researchers, and anyone running competitive strategies.
-
-StealthAgent fixes this.
-
-Your complete request and strategy reasoning are encrypted client-side using the SolRouter SDK. The inference happens inside secure isolated hardware, and only the final recommendation comes back. Your strategy never hits a public server in plaintext.
+StealthEdge solves this by keeping your research intent completely private while still delivering useful analysis based on live Polymarket odds.
 
 ### How It Works
 
-1. You type your trading idea in plain English.
-2. The app sends your message through SolRouter's encrypted inference.
-3. The agent reasons privately and returns clear swap recommendations.
-4. You review the suggestions and can execute the swap (Jupiter integration ready for next step).
+1. You type a question in natural language.
+2. The app fetches public Polymarket data (odds, volume, etc.).
+3. Your full query is encrypted via SolRouter and sent for private inference.
+4. The agent returns a clear summary, relevant markets, detected edges, and an overall takeaway.
+5. Everything sensitive stays protected.
 
-No forms. No rigid inputs. Just natural conversation with strong privacy.
+### Example Prompts You Can Test
 
-### Quick Test Prompts
+Here are some good prompts to try:
 
-Here are some prompts you can copy and paste to test the app right away:
+**Simple tests:**
+- "What are the current odds on New Rihanna Album before GTA VI?"
+- "Show me the latest odds on Bitcoin hitting $1M before GTA VI"
 
-**Basic tests:**
-- "Suggest a low risk swap with 50 USDC right now"
-- "What should I do with 120 SOL? Give me safe options"
-- "Find me a good momentum play with medium risk using 200 USDC"
+**Strategic research:**
+- "Is there any edge on the Russia-Ukraine ceasefire markets?"
+- "Analyze entertainment and pop culture markets right now"
+- "What does the market say about AI developments in 2026?"
 
-**More advanced tests:**
-- "Analyze trending tokens for a medium-risk swap with 80 USDC using my momentum strategy"
-- "I want to rotate out of SOL into something with better short-term upside. Suggest 2 options"
-- "Check for any low slippage opportunities to buy a high volume token with 150 USDC"
-- "Run a quick scan and recommend the best risk-adjusted swap for me right now"
-
-Feel free to be as specific or vague as you want. The agent handles natural language well.
+**Advanced / Private thesis style:**
+- "Using my private view on geopolitics, check for edges on Taiwan-related markets"
+- "I have a specific thesis on US politics. Look for mispriced markets around Trump or elections"
+- "Find any edges in the 'What will happen before GTA VI' market group"
 
 ### Tech Stack
 
-- Next.js + TypeScript + Tailwind
-- Solana Wallet Adapter
-- SolRouter SDK for private encrypted inference
-- shadcn/ui components
-- Zod for response validation
+- Next.js + TypeScript
+- SolRouter SDK for encrypted inference
+- shadcn/ui + Tailwind CSS
+- Polymarket Gamma API for live market data
+- Solana Wallet Adapter (for future features)
 
-### Why Private Inference Matters Here
+### Why This Matters for SolRouter
 
-In DeFi, your trading logic is often your biggest edge. Whether you are testing new signals, combining on-chain metrics with sentiment, or simply protecting your research, StealthAgent ensures that sensitive parts of your thinking stay private.
-
-This is exactly the kind of use case SolRouter was built for.
+Prediction market research is one of the best use cases for private inference. Your edge, your timing, and your unique angle never leave your device in plaintext. This is exactly the kind of sensitive agent workflow SolRouter was built for.
 
 ### Setup Instructions
 
@@ -74,17 +68,17 @@ This is exactly the kind of use case SolRouter was built for.
 5. Connect your Solana wallet (devnet recommended for testing)
 6. Start chatting with the agent
 
-Note: Swap execution is currently prepared with a toast notification. Real Jupiter transaction building and signing will be added soon.
+### Future Ideas
 
-### Future Improvements
+- Portfolio-aware research (connect wallet to factor in your positions)
+- Multi-step agent reasoning using SolRouter’s agent framework
+- Better news sentiment integration
+- Export research notes
 
-- Full Jupiter swap execution with transaction preview
-- Portfolio balance awareness
-- Multi-step agent reasoning (using SolRouter agent framework)
-- Trade history and performance tracking
+Built as a submission for the SolRouter Bounty.
 
-I'd love feedback on how well the privacy feels or how useful the recommendations are.
+I’d love any feedback on the privacy feel, response quality, or UI!
 
-Built for the SolRouter Bounty.
+---
 
-Let me know what you think!
+Made with ❤️ for private DeFi intelligence.
